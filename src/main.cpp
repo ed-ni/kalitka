@@ -5,11 +5,11 @@ void ledpin(void); //led on/off
 void button(void); //button short/long pression
 //void buzzer(unsigned int interval); //функция звук (инт-л)
 
-#define buzzPin PB3
-#define ledPin PB2
-#define buttInnerMISO PB1
+#define buzzPin PB3 //зуммер
+#define ledPin PB2  // светодиод
+#define buttInnerMISO PB1 // кнопка
 #define buttOuterMOSI PB0
-#define coilPin PB4
+#define coilPin PB4 // катушка
 #define INTERV_DEBOUNCE 9 //0.01s x 10 = 0.1 s debounce BUZZ_DURATION
 #define INTERV_LED 9      //x 0.01s = 0.1 s led blink on duration
 #define INTERV_LONG 29    //0.01s x INTERV_DEBOUNCE x 30 = 3 s

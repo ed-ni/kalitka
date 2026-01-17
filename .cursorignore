@@ -1,0 +1,24 @@
+# Compiled files
+*.elf
+*.hex
+*.o
+*.lst
+*.map
+
+# PlatformIO build directory
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# Build directories
+build/
+.vscode/
+
+# PDF files (if you don't need code search in them)
+*.pdf
+
+# Temporary files
+*.swp
+*.swo
+*~
+.DS_Store
