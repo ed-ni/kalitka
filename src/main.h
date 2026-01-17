@@ -1,4 +1,4 @@
-#include <Arduino.h>
+//#include <Arduino.h>
 //#include "timer-api.h"
 //#include "wiring_private.h"
 #include <avr/eeprom.h>
