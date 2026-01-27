@@ -1,1 +1,16 @@
 .pio
+
+# Build artifacts
+*.elf
+*.hex
+
+# Backup files
+*.backup
+*.bak
+
+# Size comparison files
+size_*.txt
+
+# IDE files
+.vscode/
+.idea/
