@@ -5,6 +5,15 @@ void ledpin(void); //led on/off
 void button(void); //button short/long pression
 //void buzzer(unsigned int interval); //функция звук (инт-л)
 
+// Вспомогательные функции
+static inline unsigned long atomic_read_timer(volatile unsigned long *timer);
+static inline void atomic_reset_timer(volatile unsigned long *timer);
+static inline bool timer_expired(volatile unsigned long *timer, unsigned long threshold);
+static inline void timer_start(volatile bool *timer_flag);
+static inline void timer_stop(volatile bool *timer_flag, volatile unsigned long *timer_counter);
+static inline void set_coil(bool state);
+static inline void set_led_buzzer(bool led_state, bool buzzer_state);
+
 #define buzzPin PB3 //зуммер
 #define ledPin PB2  // светодиод
 #define buttInnerMISO PB1 // кнопка
@@ -30,6 +39,51 @@ volatile unsigned long int timer1_cntr, timer1_counter; //переменные �
 volatile unsigned long int timer2_cntr, timer2_counter; //переменные подсчета мс и
 //volatile unsigned long int timer3_cntr, timer3_counter;       //переменные подсчета мс и
 volatile unsigned long int timer4_cntr, timer4_counter; //переменные подсчета мс и
+
+// Реализации вспомогательных функций
+static inline unsigned long atomic_read_timer(volatile unsigned long *timer) {
+    unsigned long value;
+    ATOMIC_READ(*timer, value);
+    return value;
+}
+
+static inline void atomic_reset_timer(volatile unsigned long *timer) {
+    ATOMIC_RESET(*timer);
+}
+
+static inline bool timer_expired(volatile unsigned long *timer, unsigned long threshold) {
+    return atomic_read_timer(timer) >= threshold;
+}
+
+static inline void timer_start(volatile bool *timer_flag) {
+    FLAG_SET(*timer_flag);
+}
+
+static inline void timer_stop(volatile bool *timer_flag, volatile unsigned long *timer_counter) {
+    FLAG_CLEAR(*timer_flag);
+    atomic_reset_timer(timer_counter);
+}
+
+static inline void set_coil(bool state) {
+    if (state) {
+        PIN_SET(coilPin);
+    } else {
+        PIN_CLEAR(coilPin);
+    }
+}
+
+static inline void set_led_buzzer(bool led_state, bool buzzer_state) {
+    if (led_state) {
+        PIN_CLEAR(ledPin);
+    } else {
+        PIN_SET(ledPin);
+    }
+    if (buzzer_state) {
+        PIN_SET(buzzPin);
+    } else {
+        PIN_CLEAR(buzzPin);
+    }
+}
 
 ISR(TIM0_COMPA_vect)
 {
@@ -77,40 +131,34 @@ int main(void)
 /////////////////// func
 void coil(void) //coil function, timer 1
 {
-  if (!timer1_fl && !press3s && press100ms) //если таймер не был запущен и разрешена coil and butt pressed
+  if (FLAG_IS_CLEAR(timer1_fl) && FLAG_IS_CLEAR(press3s) && FLAG_IS_SET(press100ms)) //если таймер не был запущен и разрешена coil and butt pressed
   {
-    timer1_fl = 1; //запустить таймер
+    FLAG_SET(timer1_fl); //запустить таймер
   }
-  else if (timer1_fl && press3s) //если таймер был запущен и запрещена coil
+  else if (FLAG_IS_SET(timer1_fl) && FLAG_IS_SET(press3s)) //если таймер был запущен и запрещена coil
   {
-    cli();           //остановить прерывания
-    timer1_cntr = 0; //обнулить переменную таймера
-    sei();           //разрешить прерывания
-    timer1_fl = 0;   //запретить пополнение переменной таймера
+    atomic_reset_timer(&timer1_cntr);
+    FLAG_CLEAR(timer1_fl);   //запретить пополнение переменной таймера
   }
-  else if (timer1_fl && !press3s) //если разрешена coil
+  else if (FLAG_IS_SET(timer1_fl) && FLAG_IS_CLEAR(press3s)) //если разрешена coil
   {
-    cli();                               //остановить прерывания
-    timer1_counter = timer1_cntr;        //сохранить значение переменной таймера
-    sei();                               //разрешить прерывания
+    timer1_counter = atomic_read_timer(&timer1_cntr);
     if (timer1_counter >= COIL_DURATION) //counter reached max
     {
-      cli();
-      timer1_cntr = 0; //обнулить таймер
-      sei();
-      timer1_fl = 0;    //запретить пополнение переменной таймера
-      if (coil_fl == 0) //if flag was reset
+      atomic_reset_timer(&timer1_cntr);
+      FLAG_CLEAR(timer1_fl);    //запретить пополнение переменной таймера
+      if (FLAG_IS_CLEAR(coil_fl)) //if flag was reset
       {
-        coil_fl = 1;           // flag set
-        PORTB |= _BV(coilPin); //coil turn on
+        FLAG_SET(coil_fl); // flag set
+        set_coil(true); //coil turn on
       }
     }
     else //идет счет
     {
-      if (coil_fl == 1) //if flag was set
+      if (FLAG_IS_SET(coil_fl)) //if flag was set
       {
-        coil_fl = 0;            //flag reset
-        PORTB &= ~_BV(coilPin); //coil turn off
+        FLAG_CLEAR(coil_fl); //flag reset
+        set_coil(false); //coil turn off
       }
     }
   }
@@ -118,27 +166,23 @@ void coil(void) //coil function, timer 1
 
 void button(void) //press long/sort func, timer 2
 {
-  if (timer2_fl == 0)
+  if (FLAG_IS_CLEAR(timer2_fl))
   {
-    timer2_fl = 1;
+    FLAG_SET(timer2_fl);
   }
 
-  cli();
-  timer2_counter = timer2_cntr;
-  sei();
+  timer2_counter = atomic_read_timer(&timer2_cntr);
 
   if (timer2_counter >= INTERV_DEBOUNCE)
   {
-    cli();
-    timer2_cntr = 0; //timer counter reset
-    sei();
-    if (~PINB & _BV(buttInnerMISO)) //is button pressed?
+    atomic_reset_timer(&timer2_cntr);
+    if (!PIN_READ(buttInnerMISO)) //is button pressed?
     {
-      press100ms = 1;
+      FLAG_SET(press100ms);
       if (buttCntr >= INTERV_LONG) //long press is reached max
       {
         buttCntr = 0;       //reset debounced counter
-        press3s = !press3s; //flip long press flag
+        FLAG_TOGGLE(press3s); //flip long press flag
       }
       else
       {
@@ -148,7 +192,7 @@ void button(void) //press long/sort func, timer 2
     else
     {
       buttCntr = 0;   //reset debounced counter
-      press100ms = 0; //reset short press flag
+      FLAG_CLEAR(press100ms); //reset short press flag
     }
   }
 }
@@ -160,35 +204,31 @@ void ledpin(void) //led control, temer4
   //   timer4_fl = 1;
   // }
 
-  cli();
-  timer4_counter = timer4_cntr;
-  sei();
+  timer4_counter = atomic_read_timer(&timer4_cntr);
   if (timer4_counter >= INTERV_LED) //end time period reach
   {
-    cli();
-    timer4_cntr = 0; //timer conter reset
-    sei();
+    atomic_reset_timer(&timer4_cntr);
     // if (timer1_fl && !press3s) //if coil on
-    if (coil_fl) //if coil on
+    if (FLAG_IS_SET(coil_fl)) //if coil on
     {
-      if (!led_fl)
+      if (FLAG_IS_CLEAR(led_fl))
       {
-        led_fl = 1;
-        PORTB &= ~_BV(ledPin) & ~_BV(buzzPin); //buzz off; //led on
+        FLAG_SET(led_fl);
+        set_led_buzzer(true, false); //buzz off; //led on
       }
     }
-    else if (!press3s) //exit duration, led and buzzer is toggled
+    else if (FLAG_IS_CLEAR(press3s)) //exit duration, led and buzzer is toggled
     {
       // led_fl = !led_fl;
-      if (led_fl)
+      if (FLAG_IS_SET(led_fl))
       {
-        led_fl = 0;
-        PORTB |= _BV(ledPin) | _BV(buzzPin); //buzz on; //led off
+        FLAG_CLEAR(led_fl);
+        set_led_buzzer(false, true); //buzz on; //led off
       }
       else
       {
-        led_fl = 1;
-        PORTB &= ~_BV(ledPin) & ~_BV(buzzPin); //buzz off; //led on}
+        FLAG_SET(led_fl);
+        set_led_buzzer(true, false); //buzz off; //led on}
       }
     }
     else // coil continuously off, buzz and led is slowly toggled
@@ -196,21 +236,19 @@ void ledpin(void) //led control, temer4
       if (led_slow_cntr >= LED_SLOW_MAX)
       {
         led_slow_cntr = 0; //reset cntr
-        if (!led_fl)
+        if (FLAG_IS_CLEAR(led_fl))
         {
-          PORTB &= ~_BV(ledPin);//led on
-          PORTB |= _BV(buzzPin); //buzz on
-          led_fl = 1;
+          set_led_buzzer(true, true); //led on, buzz on
+          FLAG_SET(led_fl);
         }
       }
       else
       {
         led_slow_cntr++;
-        if (led_fl)
+        if (FLAG_IS_SET(led_fl))
         {
-          PORTB |= _BV(ledPin);//led off
-          PORTB &= ~_BV(buzzPin); //buzz off
-          led_fl = 0;
+          set_led_buzzer(false, false); //led off, buzz off
+          FLAG_CLEAR(led_fl);
         }
       }
     }
